@@ -93,7 +93,11 @@ void print_long_format(file_info_t *files, int num_files, int show_hidden) {
         // Выводим имя владельца и группы
         pw = getpwuid(file->st.st_uid);
         gr = getgrgid(file->st.st_gid);
-        printf(" %-8s %-8s", (pw) ? pw->pw_name : "", (gr) ? gr->gr_name : "");
+        
+        if(pw && gr)
+            printf(" %-8s %-8s", (pw) ? pw->pw_name : "", (gr) ? gr->gr_name : "");
+        else
+            printf(" %8d %8d", file->st.st_uid, file->st.st_gid);
 
         // Выводим размер файла
         printf(" %5lld", (long long)file->st.st_size);
@@ -162,9 +166,11 @@ int main(int argc, char *argv[]) {
         file_info_t *file = (file_info_t *)malloc(sizeof(file_info_t));
         file->name = strdup(ent->d_name);
 
-        // Используйте fstatat() вместо stat()
-        if (fstatat(dirfd(dir), ent->d_name, &file->st, 0) == -1) {
-            fprintf(stderr, "Error: could not get file information for '%s'\n", ent->d_name);
+        char full_path[PATH_MAX];
+        sprintf(full_path, "%s/%s", dir_path, ent->d_name);
+
+        if (lstat(full_path, &file->st) == -1) {
+            perror("Error: could not get file information");
             free(file->name);
             free(file);
             continue;
