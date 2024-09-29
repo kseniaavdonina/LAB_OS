@@ -6,6 +6,6 @@ mygrep: mygrep.c
 	gcc mygrep.c -o mygrep
 run: mycat mygrep
 	./mycat 
-        ./mygrep
+	./mygrep
 clean:
 	rm -f mycat mygrep
