@@ -10,9 +10,9 @@
 
 // ANSI-коды для сброса и цветов терминала
 #define RESET   "\033[0m"
-#define BLUE    "\033[34m"
-#define GREEN   "\033[32m"
-#define CYAN    "\033[36m"
+#define BLUE    "\033[38;5;12m"
+#define GREEN   "\033[38;5;10m"
+#define CYAN    "\033[38;5;14m"
 
 // Структура для хранения информации о файле
 typedef struct file_info {
@@ -30,23 +30,29 @@ int compare_files(const void *a, const void *b) {
     return strcmp(file_a->name, file_b->name);
 }
 
-// Функция для вывода информации о файле
+// Функция для выводения информации о файле
 void print_file_info(file_info_t *file, int show_hidden) {
     // Если не нужно отображать скрытые файлы и имя файла начинается с "."
     if (!show_hidden && file->name[0] == '.')
         return;
-    // Если файл является директорией, выводим его имя синим цветом
-    if (file->is_dir)
-        printf(BLUE "%s" RESET " ", file->name);
-        // Если файл является исполняемым, выводим его имя зеленым цветом
-    else if (file->is_exec)
-        printf(GREEN "%s" RESET " ", file->name);
-        // Если файл является символьной ссылкой, выводим его имя циановым цветом
-    else if (file->is_link)
-        printf(CYAN "%s" RESET " ", file->name);
-        // Иначе выводим имя файла без цвета
-    else
-        printf("%s ", file->name);
+
+    // Если файл является символьной ссылкой
+    if (file->is_link) {
+        // Выводим имя ссылки в циановом цвете
+        printf(CYAN "%s " RESET, file->name);
+        return;
+    }
+    
+    // Определяем цвет в зависимости от типа файла
+    const char *color = RESET; // Обычный цвет
+
+    if (file->is_dir) {
+        color = BLUE;
+    } else if (file->is_exec) {
+        color = GREEN;
+    }
+
+    printf("%s%s%s ", color, file->name, RESET);
 }
 
 // Функция для вывода информации о файлах в длинном формате
@@ -65,7 +71,7 @@ void print_long_format(file_info_t *files, int num_files, int show_hidden) {
     }
 
     // Выводим общее число файлов и каталогов, а также общий размер
-    printf("total %lld\n", total_blocks/2);
+    printf("total %lld\n", total_blocks / 2);
 
     // Перебираем все файлы и выводим их информацию в длинном формате
     for (int i = 0; i < num_files; i++) {
@@ -73,8 +79,12 @@ void print_long_format(file_info_t *files, int num_files, int show_hidden) {
         if (!show_hidden && file->name[0] == '.')
             continue;
 
-        // Выводим тип файла (директория или обычный файл)
-        printf((S_ISDIR(file->st.st_mode)) ? "d" : "-");
+        // Выводим тип файла
+        if (file->is_link) {
+            printf("l"); // Символьная ссылка
+        } else {
+            printf((S_ISDIR(file->st.st_mode)) ? "d" : "-"); // Директория или обычный файл
+        }
 
         // Выводим права доступа владельца, группы и других
         printf((file->st.st_mode & S_IRUSR) ? "r" : "-");
@@ -93,24 +103,38 @@ void print_long_format(file_info_t *files, int num_files, int show_hidden) {
         // Выводим имя владельца и группы
         pw = getpwuid(file->st.st_uid);
         gr = getgrgid(file->st.st_gid);
-        
-        if(pw && gr)
-            printf(" %-8s %-8s", (pw) ? pw->pw_name : "", (gr) ? gr->gr_name : "");
-        else
-            printf(" %8d %8d", file->st.st_uid, file->st.st_gid);
 
-        // Выводим размер файла
-        printf(" %5lld", (long long)file->st.st_size);
+        if (pw && gr) {
+            printf(" %-8s %-8s", (pw) ? pw->pw_name : "", (gr) ? gr->gr_name : "");
+        } else {
+            printf(" %8d %8d", file->st.st_uid, file->st.st_gid);
+        }
+	// Выводим размер файла
+        printf(" %8lld", (long long)file->st.st_size);
 
         // Выводим время последнего изменения файла
         strftime(time_str, sizeof(time_str), "%b %d %H:%M", localtime(&file->st.st_mtime));
         printf(" %s ", time_str);
 
-        // Выводим имя файла
+        // Выводим информацию о файле
         print_file_info(file, show_hidden);
+
+        // Если файл является символьной ссылкой, выводим стрелку и путь
+        if (file->is_link) {
+            char target[256]; // предполагаемая длина пути
+            ssize_t len = readlink(file->name, target, sizeof(target) - 1);
+            if (len != -1) {
+                target[len] = '\0'; // Завершение строки
+                printf("-> %s", target);
+            } else {
+                printf("-> <error reading link>");
+            }
+        }
+
         printf("\n");
     }
 }
+
 
 // Функция для вывода информации о файлах
 void print_files(file_info_t *files, int num_files, int show_hidden, int long_format) {
