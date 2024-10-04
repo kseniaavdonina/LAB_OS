@@ -56,7 +56,7 @@ void print_file_info(file_info_t *file, int show_hidden) {
 }
 
 // Функция для вывода информации о файлах в длинном формате
-void print_long_format(file_info_t *files, int num_files, int show_hidden) {
+void print_long_format(file_info_t *files, int num_files, int show_hidden, char* dir_path) {
     struct passwd *pw;
     struct group *gr;
     char time_str[100];
@@ -109,7 +109,7 @@ void print_long_format(file_info_t *files, int num_files, int show_hidden) {
         } else {
             printf(" %8d %8d", file->st.st_uid, file->st.st_gid);
         }
-	// Выводим размер файла
+	    // Выводим размер файла
         printf(" %8lld", (long long)file->st.st_size);
 
         // Выводим время последнего изменения файла
@@ -121,13 +121,35 @@ void print_long_format(file_info_t *files, int num_files, int show_hidden) {
 
         // Если файл является символьной ссылкой, выводим стрелку и путь
         if (file->is_link) {
-            char target[256]; // предполагаемая длина пути
-            ssize_t len = readlink(file->name, target, sizeof(target) - 1);
+            char full_path[PATH_MAX];
+            sprintf(full_path, "%s/%s", dir_path, file->name);
+            char target[1024]; // предполагаемая длина пути
+            ssize_t len = readlink(full_path, target, sizeof(target) - 1);
+
             if (len != -1) {
                 target[len] = '\0'; // Завершение строки
-                printf("-> %s", target);
+                //printf("%s", target);
+                struct stat target_stat;
+                char target_path[PATH_MAX];
+                strcpy(target_path, dir_path);
+                if(strcmp(dir_path, "/")) {
+                    strcat(target_path, "/");
+                }
+                strcat(target_path, target);
+                //printf("%s\n", target_path);
+                if (lstat(target_path, &target_stat) == 0) {
+                    if(S_ISDIR(target_stat.st_mode)) {
+                        printf("-> " BLUE "%s" RESET, target);
+                    } else if(target_stat.st_mode & S_IXUSR) {
+                        printf("-> " GREEN "%s" RESET, target);
+                    } else {
+                        printf("-> %s", target);
+                    }
+                } else {
+                    perror("Error: could not read link");
+                }
             } else {
-                printf("-> <error reading link>");
+                perror("Error: could not read link");
             }
         }
 
@@ -137,10 +159,10 @@ void print_long_format(file_info_t *files, int num_files, int show_hidden) {
 
 
 // Функция для вывода информации о файлах
-void print_files(file_info_t *files, int num_files, int show_hidden, int long_format) {
+void print_files(file_info_t *files, int num_files, int show_hidden, int long_format, char* dir_path) {
     // Если нужен длинный формат, вызываем print_long_format()
     if (long_format)
-        print_long_format(files, num_files, show_hidden);
+        print_long_format(files, num_files, show_hidden, dir_path);
         // Иначе выводим имена файлов в одну строку
     else {
         for (int i = 0; i < num_files; i++)
@@ -212,7 +234,7 @@ int main(int argc, char *argv[]) {
     qsort(files, num_files, sizeof(file_info_t), compare_files);
 
     // Выводим информацию о файлах
-    print_files(files, num_files, show_hidden, long_format);
+    print_files(files, num_files, show_hidden, long_format, dir_path);
 
     // Очищаем память
     for (int i = 0; i < num_files; i++)
