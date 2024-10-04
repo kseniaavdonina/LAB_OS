@@ -1,7 +1,7 @@
 .PHONY: all myls run clean
 all: run
 myls: main.c
-	gcс main.c -o myls
+	gcc main.c -o myls
 	
 run: myls
 	./myls
