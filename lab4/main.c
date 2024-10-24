@@ -102,5 +102,5 @@ int main(int argc, char *argv[]) {
         change_mode_symbolic(command, filename);
     }
 
-    return EXIT_SUCCESS;
+    return 0;
 }
