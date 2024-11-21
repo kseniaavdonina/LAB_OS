@@ -9,7 +9,6 @@
 #include <time.h>
 #include <signal.h>
 #include <errno.h>
-#include <sys/ipc.h>
 
 // Имя сегмента разделяемой памяти
 const char *SHM_NAME = "/shm_time";
@@ -24,8 +23,6 @@ typedef struct {
 
 sem_t *sem;
 
-volatile sig_atomic_t keep_running = 1; // Флаг для прерывания бесконечного цикла
-
 void cleanup(void) {
     shm_unlink(SHM_NAME);
     sem_close(sem);
@@ -33,35 +30,23 @@ void cleanup(void) {
 }
 
 void handle_signal(int sig) {
-    keep_running = 0;
+    cleanup();
+    exit(0);
 }
 
 int main() {
-    struct sigaction sa;
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = handle_signal;
-    sigemptyset(&sa.sa_mask);
-    sigaction(SIGINT, &sa, NULL);
-    sigaction(SIGTERM, &sa, NULL);
+    // Обработка сигналов
+    signal(SIGINT, handle_signal);
+    signal(SIGTERM, handle_signal);
 
     // Инициализация семафора для проверки уникального запуска
-    sem = sem_open(SEMAPHORE_NAME, O_CREAT, 0644, 1);
+    sem = sem_open(SEMAPHORE_NAME, O_CREAT | O_EXCL, 0644, 1);
     if (sem == SEM_FAILED) {
-        perror("Ошибка создания семафора");
-        return EXIT_FAILURE;
-    }
-
-    // Проверяем, запущен ли уже процесс
-    if (sem_trywait(sem) == -1) {
-        if (errno == EAGAIN) {
+        if (errno == EEXIST) {
             fprintf(stderr, "Процесс уже запущен!\n");
-            sem_close(sem);
-            sem_unlink(SEMAPHORE_NAME);
             return EXIT_FAILURE;
         } else {
-            perror("Ошибка ожидания семафора");
-            sem_close(sem);
-            sem_unlink(SEMAPHORE_NAME);
+            perror("Ошибка создания семафора");
             return EXIT_FAILURE;
         }
     }
@@ -96,7 +81,7 @@ int main() {
 
     close(shm_fd);
 
-    while (keep_running) {
+    while (1) {
         data->timestamp = time(NULL);
         data->pid = getpid();
 
@@ -106,6 +91,7 @@ int main() {
 
         sleep(5);
     }
+
     munmap(data, sizeof(shared_data_t));
     cleanup(); // Освобождаем ресурсы
 
