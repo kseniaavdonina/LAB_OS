@@ -79,7 +79,7 @@ int main() {
             printf("Received: %s\n", data->message);
 
             time_t current_time = time(NULL);
-            char buffer[26];  // Бюфер для хранения строки времени
+            char buffer[26];  //хранение строки времени
             strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", localtime(&current_time)); 
             
             printf("Current Time: %s, Current PID: %d\n", buffer, getpid());
