@@ -87,7 +87,9 @@ int main(int argc, char **argv) {
 
             snprintf(buffer, BUF_SIZE, "Time in PARENT process %s\nPARENT pid = %d\n", time_str, getpid());
 
-            if (write(fd, buffer, strlen(buffer)) == -1) {
+	    buffer[BUF_SIZE - 1] = '\0';
+
+            if (write(fd, buffer, strlen(buffer) + 1) == -1) {
                 perror("Ошибка записи в FIFO");
                 close(fd);
                 unlink(fifoname);
@@ -106,7 +108,6 @@ int main(int argc, char **argv) {
                 perror("Ошибка удаления FIFO");
                 return EXIT_FAILURE;
             }
-
             break;
     }
 
