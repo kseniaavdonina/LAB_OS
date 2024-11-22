@@ -53,7 +53,11 @@ int main(int argc, char** argv) {
 
             snprintf(buffer, BUF_SIZE, "Time in PARENT process %s\nPARENT pid = %d\n", time_str, getpid());
 
-            write(fd[1], buffer, strlen(buffer));
+            if (write(fd[1], buffer, strlen(buffer) + 1) == -1 ) {
+		perror("Ошибка записи в pipe");
+	        close(fd[1]);
+		exit(EXIT_FAILURE);
+	    }
 
             close(fd[1]);
 
