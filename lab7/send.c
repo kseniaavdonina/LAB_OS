@@ -1,99 +1,85 @@
 #include <stdio.h>
-#include <stdlib.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/types.h>
 #include <unistd.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <semaphore.h>
+#include <stdlib.h>
 #include <string.h>
-#include <time.h>
 #include <signal.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <time.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
 
-// Имя сегмента разделяемой памяти
-const char *SHM_NAME = "/shm_time";
-const char *SEMAPHORE_NAME = "/shm_sem"; // Имя семафора
+int shmid = 0;
+char* shm_name = "shared_memory";
+char* addr = NULL;
 
-// Структура данных для передачи
-typedef struct {
-    time_t timestamp;
-    pid_t pid;
-    char message[128];
-} shared_data_t;
-
-sem_t *sem;
-
-void cleanup(void) {
-    shm_unlink(SHM_NAME);
-    sem_close(sem);
-    sem_unlink(SEMAPHORE_NAME);
+void sendError(const char* func, const char* message) {
+    fprintf(stderr, "Error in %s: %s\n", func, message);
+    exit(EXIT_FAILURE);
 }
 
-void handle_signal(int sig) {
-    cleanup();
+void handler(int sig) {
+    printf("[SIGNAL HANDLER] Signal %d received\n", sig);
+    
+    if (addr != NULL && shmdt(addr) < 0) {
+        int err = errno;
+        fprintf(stderr, "In shmdt %s (%d)\n", strerror(err), err);
+        exit(1);
+    }
+
+    if (shmctl(shmid, IPC_RMID, NULL) < 0) {
+        int err = errno;
+        fprintf(stderr, "In shmctl %s (%d)\n", strerror(err), err);
+        exit(1);
+    }
+
+    unlink(shm_name);
     exit(0);
 }
 
-int main() {
-    // Обработка сигналов
-    signal(SIGINT, handle_signal);
-    signal(SIGTERM, handle_signal);
-
-    // Инициализация семафора для проверки уникального запуска
-    sem = sem_open(SEMAPHORE_NAME, O_CREAT | O_EXCL, 0644, 1);
-    if (sem == SEM_FAILED) {
-        if (errno == EEXIST) {
-            fprintf(stderr, "Процесс уже запущен!\n");
-            return EXIT_FAILURE;
-        } else {
-            perror("Ошибка создания семафора");
-            return EXIT_FAILURE;
-        }
+int main(int argc, char** argv) {
+    (void)argc, (void)argv;
+    int fd = open(shm_name, O_CREAT|O_EXCL, S_IWUSR | S_IRUSR);
+    if (fd == -1) {
+        fprintf(stderr, "The process is running\n");
+	close(fd);
+        return 1;
     }
 
-    // Создаем сегмент разделяемой памяти
-    int shm_fd = shm_open(SHM_NAME, O_CREAT | O_RDWR, 0644);
-    if (shm_fd == -1) {
-        perror("Ошибка создания разделяемой памяти");
-        sem_close(sem);
-        sem_unlink(SEMAPHORE_NAME);
-        return EXIT_FAILURE;
+    close(fd);
+
+    if (signal(SIGINT, handler) == SIG_ERR || signal(SIGTERM, handler) == SIG_ERR) {
+        perror("Error in signal");
+        return 1;
     }
 
-    // Устанавливаем размер сегмента разделяемой памяти
-    if (ftruncate(shm_fd, sizeof(shared_data_t)) == -1) {
-        perror("Ошибка установки размера разделяемой памяти");
-        shm_unlink(SHM_NAME);
-        sem_close(sem);
-        sem_unlink(SEMAPHORE_NAME);
-        return EXIT_FAILURE;
+    key_t key = ftok(shm_name, 1);
+    if (key == -1) {
+        sendError("ftok", strerror(errno));
     }
 
-    // Отображаем сегмент разделяемой памяти в адресное пространство процесса
-    shared_data_t *data = mmap(NULL, sizeof(shared_data_t), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-    if (data == MAP_FAILED) {
-        perror("Ошибка отображения разделяемой памяти");
-        shm_unlink(SHM_NAME);
-        sem_close(sem);
-        sem_unlink(SEMAPHORE_NAME);
-        return EXIT_FAILURE;
+    shmid = shmget(key, 1024, 0666 | IPC_CREAT | IPC_EXCL);
+    if (shmid == -1) {
+        sendError("shmget", strerror(errno));
     }
 
-    close(shm_fd);
+    addr = (char*)shmat(shmid, NULL, 0);
+    if (addr == (char*)-1) {
+        sendError("shmat", strerror(errno));
+    }
 
     while (1) {
-        data->timestamp = time(NULL);
-        data->pid = getpid();
-
-        char formatted_time[80];
-        strftime(formatted_time, sizeof(formatted_time), "%Y-%m-%d %H:%M:%S", localtime(&data->timestamp));
-        snprintf(data->message, sizeof(data->message), "Time: %s, PID: %d", formatted_time, data->pid);
-
-        sleep(5);
+        time_t mytime = time(NULL);
+        struct tm* now = localtime(&mytime);
+        char str[100];
+        snprintf(str, sizeof(str), "[SEND] Time: %02d:%02d:%02d, my pid: %d\n", 
+                 now->tm_hour, now->tm_min, now->tm_sec, getpid());
+        strcpy(addr, str);
+        sleep(3);
     }
-
-    munmap(data, sizeof(shared_data_t));
-    cleanup(); // Освобождаем ресурсы
 
     return 0;
 }
