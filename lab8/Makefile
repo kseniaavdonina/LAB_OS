@@ -1,7 +1,7 @@
 .PHONY: all mtx run clean
 all: run
 mtx: mtx.c
-	gcc mtx.c -o mtx
+	gcc mtx.c -lpthread -o mtx
 	
 run: mtx
 	./mtx
