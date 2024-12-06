@@ -1,10 +1,7 @@
-.PHONY: all mtx run clean
-all: run
+.PHONY: all mtx clean
+all: mtx
 mtx: mtx.c
 	gcc mtx.c -lpthread -o mtx
-	
-run: mtx
-	./mtx
-	
+
 clean:
-	rm -f mtx
+	rm -f *.o mtx
