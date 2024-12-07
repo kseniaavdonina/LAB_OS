@@ -5,24 +5,29 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 #include <errno.h>
-#include <semaphore.h>
+#include <fcntl.h>
 #include <time.h>
-
-#define SEM_NAME "/my_semaphore"
+#include <sys/stat.h>
+#include <sys/sem.h>
 
 char* shm_name = "shared_memory";
 int size = 1024;
 int shmid = 0;
 char* addr = NULL;
-sem_t *semaphore;
+int semid = 0;
+
+struct sembuf sem_lock = {0, -1, 0}, sem_open = {0, 1, 0};
 
 void sendError(const char* func, const char* message) {
     fprintf(stderr, "Error in %s: %s\n", func, message);
     exit(EXIT_FAILURE);
 }
 
-int main() {
+int main(int argc, char** argv) {
+    (void)argc, (void)argv;
+
     key_t key = ftok(shm_name, 1);
     if (key == (key_t)-1) {
         sendError("ftok", strerror(errno));
@@ -38,14 +43,18 @@ int main() {
         sendError("shmat", strerror(errno));
     }
 
-    semaphore = sem_open(SEM_NAME, 0);
-    if (semaphore == SEM_FAILED) {
-        perror("Failed to open semaphore");
-        exit(1);
+    semid = semget(key, 1, 0666);
+    if (semid == -1) {
+        sendError("semget", strerror(errno));
+    }
+    if (semctl(semid, 0, SETVAL, 1) == -1) {
+        sendError("semctl", strerror(errno));
     }
 
     while (1) {
-        sem_wait(semaphore);
+        if (semop(semid, &sem_lock, 1) == -1) {
+            sendError("semop wait", strerror(errno));
+        }
 
         char str[100];
         strcpy(str, addr);
@@ -60,7 +69,9 @@ int main() {
                  timestr, getpid(), str);
         printf("%s", output_str);
 
-        sem_post(semaphore);
+        if (semop(semid, &sem_open, 1) == -1) {
+            sendError("semop signal", strerror(errno));
+        }
         sleep(1);
     }
 
@@ -69,6 +80,5 @@ int main() {
             sendError("shmdt", strerror(errno));
         }
     }
-    sem_close(semaphore);
     return 0;
 }
