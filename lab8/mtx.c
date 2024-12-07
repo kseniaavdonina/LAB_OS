@@ -13,24 +13,25 @@ int shared_array[ARRAY_SIZE];
 int write_count = 0;
 
 void* writer_thread(void* arg) {
-    while(write_count < ARRAY_SIZE) {
+    while (write_count < ARRAY_SIZE) {
         pthread_mutex_lock(&mutex);
-        usleep(10000);
+        usleep(1000);
 
         if (write_count < ARRAY_SIZE) {
             shared_array[write_count] = write_count;
+            printf("Writer updated array at index: %d\n", shared_array[write_count]);
             write_count++;
-            printf("Writer updated array at index: %d\n", shared_array[write_count - 1]);
         }
 
         pthread_mutex_unlock(&mutex);
-        usleep(200000);
+        usleep(100000);
     }
-    return NULL;
+    pthread_exit(NULL);
 }
 
 void* reader_thread(void* arg) {
     int tid = *((int*)arg);
+
     while(1) {
         pthread_mutex_lock(&mutex);
         usleep(10000);
@@ -40,11 +41,16 @@ void* reader_thread(void* arg) {
             printf("%d ", shared_array[i]);
         }
         printf(", tid: [%lx]\n", pthread_self());
+
+        if (write_count >= ARRAY_SIZE) {
+            pthread_mutex_unlock(&mutex);
+            break;
+        }
         
         pthread_mutex_unlock(&mutex);
-        usleep(200000);
+        usleep(100000);
     }
-    return NULL;
+    pthread_exit(NULL);
 }
 
 int main() {
@@ -73,10 +79,20 @@ int main() {
         }
     }
 
-    pthread_join(writer, NULL);
-    for (int i = 0; i < NUM_READERS; i++) {
-	pthread_cancel(readers[i]);
-        pthread_join(readers[i], NULL);
+    for (int i = 0; i < NUM_READERS; ++i) {
+        void* res = NULL;
+        int join_res = pthread_join(readers[i], &res);
+        if (join_res != 0) {
+            int err = errno;
+            printf("ERROR IN JOIN (reader %d): %s(%d)\n", i, strerror(err), err);
+        }
+    }
+
+    void* res = NULL;
+    int join_res = pthread_join(writer, &res);
+    if (join_res != 0) {
+        int err = errno;
+        printf("ERROR IN JOIN (writer): %s(%d)\n", strerror(err), err);
     }
 
     pthread_mutex_destroy(&mutex);
