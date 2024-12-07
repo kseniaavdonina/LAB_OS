@@ -1,68 +1,83 @@
-#include <pthread.h>
 #include <stdio.h>
-#include <unistd.h>
 #include <stdlib.h>
+#include <pthread.h>
+#include <string.h>
+#include <unistd.h>
+#include <errno.h>
 
-#define READ_THREADS_NUM 10
-#define WRITE_LIMIT 10
+#define ARRAY_SIZE 256
+#define NUM_READERS 10
 
-typedef struct {
-    int array[100];
-    int next_write;
-    pthread_mutex_t mutex;
-} thread_array;
+pthread_mutex_t mutex;
+int shared_array[ARRAY_SIZE];
+int write_count = 0;
 
-void* write_thread(void* thread_data) {
-    thread_array* shared_array = (thread_array*)thread_data;
-    for (int i = 0; i < WRITE_LIMIT; i++) {
+void* writer_thread(void* arg) {
+    while(1) {
+        pthread_mutex_lock(&mutex);
         usleep(10000);
-        pthread_mutex_lock(&shared_array->mutex);
 
-        shared_array->array[shared_array->next_write] = shared_array->next_write;
-        printf("Written: %d\n", shared_array->array[shared_array->next_write]);
+        if (write_count < ARRAY_SIZE) {
+            shared_array[write_count] = write_count;
+            write_count++;
+            printf("Writer updated array at index: %d\n", shared_array[write_count - 1]);
+        }
 
-        shared_array->next_write++;
+        pthread_mutex_unlock(&mutex);
         usleep(200000);
-        pthread_mutex_unlock(&shared_array->mutex);
     }
-
     return NULL;
 }
 
-void* read_thread(void* thread_data) {
-    thread_array* shared_array = (thread_array*)thread_data;
-    usleep(100000);
-    for (int i = 0; i < WRITE_LIMIT; i++) {
+void* reader_thread(void* arg) {
+    int tid = *((int*)arg);
+    while(1) {
+        pthread_mutex_lock(&mutex);
         usleep(10000);
-        pthread_mutex_lock(&shared_array->mutex);
-        if (i < shared_array->next_write) {
-            printf("Read: array[%d] = %d tid: %lx\n", i, shared_array->array[i], pthread_self());
-        }
-        
-        pthread_mutex_unlock(&shared_array->mutex);
-        usleep(100000);
-    }
 
+        printf("Reader %d reads array: ", tid);
+        for (int i = 0; i < write_count; i++) {
+            printf("%d ", shared_array[i]);
+        }
+        printf(", tid: [%lx]\n", pthread_self());
+        
+        pthread_mutex_unlock(&mutex);
+        usleep(200000);
+    }
     return NULL;
 }
 
 int main() {
-    thread_array shared_array;
-    shared_array.next_write = 0;
+    pthread_t readers[NUM_READERS];
+    pthread_t writer;
+    int reader_ids[NUM_READERS];
 
-    pthread_mutex_init(&shared_array.mutex, NULL);
-    pthread_t writing_array;
-    pthread_t reading_threads[READ_THREADS_NUM];
-    pthread_create(&writing_array, NULL, write_thread, (void*)&shared_array);
-    
-    for (int i = 0; i < READ_THREADS_NUM; i++) {
-        pthread_create(&reading_threads[i], NULL, read_thread, (void*)&shared_array);
+    if (pthread_mutex_init(&mutex, NULL) != 0) {
+        fprintf(stderr, "Error initializing mutex: %s\n", strerror(errno));
+        return 1;
     }
-    pthread_join(writing_array, NULL);
-    
-    for (int i = 0; i < READ_THREADS_NUM; i++) {
-        pthread_join(reading_threads[i], NULL);
+
+    if (pthread_create(&writer, NULL, writer_thread, NULL) != 0) {
+        fprintf(stderr, "Error creating writer thread: %s\n", strerror(errno));
+        pthread_mutex_destroy(&mutex);
+        return 1;
     }
-    pthread_mutex_destroy(&shared_array.mutex);
+
+    for (int i = 0; i < NUM_READERS; i++) {
+        reader_ids[i] = i;
+        if (pthread_create(&readers[i], NULL, reader_thread, &reader_ids[i]) != 0) {
+            fprintf(stderr, "Error creating reader thread %d: %s\n", i, strerror(errno));
+            pthread_cancel(writer);
+            pthread_mutex_destroy(&mutex);
+            return 1;
+        }
+    }
+
+    pthread_join(writer, NULL);
+    for (int i = 0; i < NUM_READERS; i++) {
+        pthread_join(readers[i], NULL);
+    }
+
+    pthread_mutex_destroy(&mutex);
     return 0;
 }
