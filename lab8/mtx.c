@@ -26,12 +26,11 @@ void* writer_thread(void* arg) {
         pthread_mutex_unlock(&mutex);
         usleep(100000);
     }
-    pthread_exit(NULL);
+    return NULL;
 }
 
 void* reader_thread(void* arg) {
     int tid = *((int*)arg);
-
     while(1) {
         pthread_mutex_lock(&mutex);
         usleep(10000);
@@ -50,7 +49,7 @@ void* reader_thread(void* arg) {
         pthread_mutex_unlock(&mutex);
         usleep(100000);
     }
-    pthread_exit(NULL);
+    return NULL;
 }
 
 int main() {
