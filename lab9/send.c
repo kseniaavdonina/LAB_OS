@@ -7,16 +7,18 @@
 #include <string.h>
 #include <signal.h>
 #include <errno.h>
-#include <semaphore.h>
-#include <time.h>
 #include <fcntl.h>
-
-#define SEM_NAME "/my_semaphore"
+#include <time.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <sys/sem.h>
 
 int shmid = 0;
+int semid = 0;
 char* shm_name = "shared_memory";
 char* addr = NULL;
-sem_t *semaphore;
+
+struct sembuf sem_lock = {0, -1, 0}, sem_open = {0, 1, 0};
 
 void sendError(const char* func, const char* message) {
     fprintf(stderr, "Error in %s: %s\n", func, message);
@@ -26,11 +28,16 @@ void sendError(const char* func, const char* message) {
 void handler(int sig) {
     printf("[SIGNAL HANDLER] Signal %d received\n", sig);
     
-    if (addr != NULL && shmdt(addr) < 0) {
-        int err = errno;
-        fprintf(stderr, "In shmdt %s (%d)\n", strerror(err), err);
-        exit(1);
+    if (addr != NULL) {
+        if (shmdt(addr) < 0) {
+            int err = errno;
+            fprintf(stderr, "In shmdt %s (%d)\n", strerror(err), err);
+            exit(1);
+        }
+    } else {
+        fprintf(stderr, "addr is NULL, cannot detach shared memory.\n");
     }
+
 
     if (shmctl(shmid, IPC_RMID, NULL) < 0) {
         int err = errno;
@@ -38,18 +45,17 @@ void handler(int sig) {
         exit(1);
     }
 
-    sem_close(semaphore);
-    sem_unlink(SEM_NAME);
-
+    semctl(semid, 0, IPC_RMID);
     unlink(shm_name);
     exit(0);
 }
 
 int main(int argc, char** argv) {
     (void)argc, (void)argv;
-    int fd = open(shm_name, O_CREAT|O_EXCL, S_IWUSR | S_IRUSR);
+
+    int fd = open(shm_name, O_CREAT | O_EXCL, S_IWUSR | S_IRUSR);
     if (fd == -1) {
-        fprintf(stderr, "The process is running\n");
+        fprintf(stderr, "The process is already running\n");
         close(fd);
         return 1;
     }
@@ -76,23 +82,30 @@ int main(int argc, char** argv) {
         sendError("shmat", strerror(errno));
     }
 
-    semaphore = sem_open(SEM_NAME, O_CREAT, 0644, 1);
-    if (semaphore == SEM_FAILED) {
-        perror("Failed to create semaphore");
-        exit(1);
+    semid = semget(key, 1, 0666 | IPC_CREAT | IPC_EXCL);
+    if (semid == -1) {
+        sendError("semget", strerror(errno));
+    }
+
+    if (semctl(semid, 0, SETVAL, 1) == -1) {
+        sendError("semctl", strerror(errno));
     }
 
     while (1) {
-        sem_wait(semaphore);
+        if (semop(semid, &sem_lock, 1) < 0) {
+            sendError("semop wait", strerror(errno));
+        }
 
         time_t mytime = time(NULL);
         struct tm* now = localtime(&mytime);
         char str[100];
-        snprintf(str, sizeof(str), "[SEND] Time: %02d:%02d:%02d, my pid: %d\n",
+        snprintf(str, sizeof(str), "[SEND] Time: %02d:%02d:%02d, my pid: %d\n", 
                  now->tm_hour, now->tm_min, now->tm_sec, getpid());
         strcpy(addr, str);
-        
-        sem_post(semaphore);
+
+        if (semop(semid, &sem_open, 1) < 0) {
+            sendError("semop signal", strerror(errno));
+        }
         sleep(3);
     }
     return 0;
