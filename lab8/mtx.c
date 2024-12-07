@@ -5,7 +5,7 @@
 #include <unistd.h>
 #include <errno.h>
 
-#define ARRAY_SIZE 256
+#define ARRAY_SIZE 10
 #define NUM_READERS 10
 
 pthread_mutex_t mutex;
@@ -13,7 +13,7 @@ int shared_array[ARRAY_SIZE];
 int write_count = 0;
 
 void* writer_thread(void* arg) {
-    while(1) {
+    while(write_count < ARRAY_SIZE) {
         pthread_mutex_lock(&mutex);
         usleep(10000);
 
@@ -75,6 +75,7 @@ int main() {
 
     pthread_join(writer, NULL);
     for (int i = 0; i < NUM_READERS; i++) {
+	pthread_cancel(readers[i]);
         pthread_join(readers[i], NULL);
     }
 
