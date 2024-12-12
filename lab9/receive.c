@@ -25,8 +25,29 @@ void sendError(const char* func, const char* message) {
     exit(EXIT_FAILURE);
 }
 
+void cleanup() {
+    if (addr != NULL && shmdt(addr) < 0) {
+        fprintf(stderr, "Error detaching shared memory: %s\n", strerror(errno));
+    }
+    
+    if (shmid > 0 && shmctl(shmid, IPC_RMID, NULL) < 0) {
+        fprintf(stderr, "Error removing shared memory: %s\n", strerror(errno));
+    }
+
+    if (semid > 0 && semctl(semid, 0, IPC_RMID) < 0) {
+        fprintf(stderr, "Error removing semaphore: %s\n", strerror(errno));
+    }
+}
+
+void handler(int signal) {
+    cleanup();
+    exit(0);
+}
+
 int main(int argc, char** argv) {
     (void)argc, (void)argv;
+    signal(SIGINT, handler);
+    signal(SIGTERM, handler);
 
     key_t key = ftok(shm_name, 1);
     if (key == (key_t)-1) {
@@ -47,14 +68,9 @@ int main(int argc, char** argv) {
     if (semid == -1) {
         sendError("semget", strerror(errno));
     }
-    if (semctl(semid, 0, SETVAL, 1) == -1) {
-        sendError("semctl", strerror(errno));
-    }
 
     while (1) {
-        if (semop(semid, &sem_lock, 1) == -1) {
-            sendError("semop wait", strerror(errno));
-        }
+        semop(semid, &sem_lock, 1);
 
         char str[100];
         strcpy(str, addr);
@@ -69,16 +85,15 @@ int main(int argc, char** argv) {
                  timestr, getpid(), str);
         printf("%s", output_str);
 
-        if (semop(semid, &sem_open, 1) == -1) {
-            sendError("semop signal", strerror(errno));
-        }
+        semop(semid, &sem_open, 1);
         sleep(1);
     }
-
+    /*shmdt(addr);
     if (addr != NULL) {
         if (shmdt(addr) < 0) {
             sendError("shmdt", strerror(errno));
         }
-    }
+    }*/
+    cleanup();
     return 0;
 }
