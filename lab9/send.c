@@ -10,7 +10,6 @@
 #include <fcntl.h>
 #include <time.h>
 #include <sys/stat.h>
-#include <sys/wait.h>
 #include <sys/sem.h>
 
 int shmid = 0;
@@ -87,14 +86,10 @@ int main(int argc, char** argv) {
         sendError("semget", strerror(errno));
     }
 
-    if (semctl(semid, 0, SETVAL, 1) == -1) {
-        sendError("semctl", strerror(errno));
-    }
+    semop(semid, &sem_open, 1);
 
     while (1) {
-        if (semop(semid, &sem_lock, 1) < 0) {
-            sendError("semop wait", strerror(errno));
-        }
+        semop(semid, &sem_lock, 1);
 
         time_t mytime = time(NULL);
         struct tm* now = localtime(&mytime);
@@ -103,9 +98,7 @@ int main(int argc, char** argv) {
                  now->tm_hour, now->tm_min, now->tm_sec, getpid());
         strcpy(addr, str);
 
-        if (semop(semid, &sem_open, 1) < 0) {
-            sendError("semop signal", strerror(errno));
-        }
+        semop(semid, &sem_open, 1);
         sleep(3);
     }
     return 0;
