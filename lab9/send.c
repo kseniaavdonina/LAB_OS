@@ -44,7 +44,12 @@ void handler(int sig) {
         exit(1);
     }
 
-    semctl(semid, 0, IPC_RMID);
+    if (semctl(semid, 0, IPC_RMID) == -1) {
+		int err = errno;
+	    fprintf(stderr, "In semctl %s (%d)\n", strerror(err), err);
+	    exit(1);    
+    }
+
     unlink(shm_name);
     exit(0);
 }
