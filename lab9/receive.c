@@ -25,22 +25,10 @@ void sendError(const char* func, const char* message) {
     exit(EXIT_FAILURE);
 }
 
-void cleanup() {
-    if (addr != NULL && shmdt(addr) < 0) {
+void handler(int signal) {
+    if (addr != NULL && shmdt(addr) == -1) {
         fprintf(stderr, "Error detaching shared memory: %s\n", strerror(errno));
     }
-    
-    if (shmid > 0 && shmctl(shmid, IPC_RMID, NULL) < 0) {
-        fprintf(stderr, "Error removing shared memory: %s\n", strerror(errno));
-    }
-
-    if (semid > 0 && semctl(semid, 0, IPC_RMID) < 0) {
-        fprintf(stderr, "Error removing semaphore: %s\n", strerror(errno));
-    }
-}
-
-void handler(int signal) {
-    cleanup();
     exit(0);
 }
 
@@ -88,12 +76,6 @@ int main(int argc, char** argv) {
         semop(semid, &sem_open, 1);
         sleep(1);
     }
-    /*shmdt(addr);
-    if (addr != NULL) {
-        if (shmdt(addr) < 0) {
-            sendError("shmdt", strerror(errno));
-        }
-    }*/
-    cleanup();
+
     return 0;
 }
